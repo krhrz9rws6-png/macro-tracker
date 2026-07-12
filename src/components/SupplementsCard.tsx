@@ -5,22 +5,24 @@ import { EMPTY_NUTRIENTS, addNutrients, type Nutrients } from '../lib/nutrition'
 
 // Label-accurate presets. Elevit verified against the Australian product
 // (per tablet). Generic entries are typical values — all editable after adding.
-const PRESETS: { name: string; doseLabel: string; nutrients: Partial<Nutrients> }[] = [
+const PRESETS: { name: string; doseLabel: string; nutrients: Partial<Nutrients>; pregnancy?: boolean }[] = [
   {
     name: 'Elevit (pregnancy multivitamin)',
     doseLabel: '1 tablet',
+    pregnancy: true,
     nutrients: {
       folate: 800, iron: 60, iodine: 220, b12: 2.6, vitC: 85, vitD: 5,
       vitE: 18.7, calcium: 125, magnesium: 100, zinc: 11,
     },
   },
+  { name: 'Folic acid 500µg', doseLabel: '1 tablet', pregnancy: true, nutrients: { folate: 500 } },
+  { name: 'Iodine 150µg', doseLabel: '1 tablet', pregnancy: true, nutrients: { iodine: 150 } },
+  { name: 'Vitamin D 1000IU', doseLabel: '1 capsule', pregnancy: true, nutrients: { vitD: 25 } },
   { name: 'Fish oil 1000mg', doseLabel: '1 capsule', nutrients: { kcal: 9, fat: 1 } },
-  { name: 'Vitamin D 1000IU', doseLabel: '1 capsule', nutrients: { vitD: 25 } },
   { name: 'Iron + C (e.g. Ferro-Grad C)', doseLabel: '1 tablet', nutrients: { iron: 105, vitC: 500 } },
   { name: 'Protein powder', doseLabel: '1 scoop (30g)', nutrients: { kcal: 115, protein: 24, carbs: 2, fat: 1.5, calcium: 130 } },
   { name: 'Creatine 5g', doseLabel: '1 scoop (5g)', nutrients: {} },
   { name: 'Magnesium 300mg', doseLabel: '1 tablet', nutrients: { magnesium: 300 } },
-  { name: 'Iodine 150µg', doseLabel: '1 tablet', nutrients: { iodine: 150 } },
 ]
 
 const CUSTOM_FIELDS: { key: keyof Nutrients; label: string; unit: string }[] = [
@@ -115,9 +117,21 @@ function ManagePanel({ profile, existing }: { profile: Profile; existing: Supple
   const [name, setName] = useState('')
   const [doseLabel, setDoseLabel] = useState('1 tablet')
   const [vals, setVals] = useState<Record<string, string>>({})
+  const pregActive = !!profile.pregnancy
 
   const addPreset = (p: (typeof PRESETS)[number]) =>
     db.supplements.add({ profileId: profile.id!, name: p.name, doseLabel: p.doseLabel, nutrients: p.nutrients, createdAt: Date.now() })
+
+  // Pregnancy safety notes on the current cabinet (informational, GP decides).
+  const warnings: string[] = []
+  if (profile.pregnancy?.state === 'pregnant') {
+    const totalIron = existing.reduce((s, x) => s + (x.nutrients.iron ?? 0), 0)
+    if (totalIron > 60) warnings.push(`Cabinet totals ${Math.round(totalIron)}mg iron/day if all taken — check the double-up with your GP.`)
+    if (existing.some((x) => (x.nutrients.vitA ?? 0) >= 700)) warnings.push('A supplement here is high in vitamin A — high-dose retinol is not recommended in pregnancy; check with your GP.')
+    const hasFolate = existing.some((x) => (x.nutrients.folate ?? 0) >= 400)
+    const hasIodine = existing.some((x) => (x.nutrients.iodine ?? 0) >= 100)
+    if (!hasFolate || !hasIodine) warnings.push('Australian guidelines recommend folic acid + iodine supplements in pregnancy — worth raising with your GP or pharmacist.')
+  }
 
   const addCustom = async () => {
     if (!name.trim()) return
@@ -131,14 +145,32 @@ function ManagePanel({ profile, existing }: { profile: Profile; existing: Supple
   }
 
   const notAdded = PRESETS.filter((p) => !existing.some((s) => s.name === p.name))
+  const pregPresets = pregActive ? notAdded.filter((p) => p.pregnancy) : []
+  const otherPresets = pregActive ? notAdded.filter((p) => !p.pregnancy) : notAdded
 
   return (
     <div className="border-t border-gray-100 px-4 py-3 space-y-3">
-      {notAdded.length > 0 && (
+      {warnings.map((w) => (
+        <div key={w} className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">🤰 {w}</div>
+      ))}
+      {pregPresets.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-2">Recommended in pregnancy</div>
+          <div className="flex flex-wrap gap-1.5">
+            {pregPresets.map((p) => (
+              <button key={p.name} onClick={() => addPreset(p)}
+                className="px-2.5 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium">
+                + {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {otherPresets.length > 0 && (
         <div>
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Common supplements</div>
           <div className="flex flex-wrap gap-1.5">
-            {notAdded.map((p) => (
+            {otherPresets.map((p) => (
               <button key={p.name} onClick={() => addPreset(p)}
                 className="px-2.5 py-1.5 rounded-lg bg-brand-50 text-brand-800 text-xs font-medium">
                 + {p.name}

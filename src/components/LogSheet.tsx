@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, MEAL_SLOTS, type MealSlot, type Profile } from '../db'
 import { getFood, isBeverage, searchFoods, type Food } from '../lib/afcd'
 import {
-  qualityScore, scaleFood, standardDrinks, trafficLights, type Nutrients,
+  pregnancyFoodFlag, qualityScore, scaleFood, standardDrinks, trafficLights, type Nutrients,
 } from '../lib/nutrition'
 import { LightBadge, QualityDot } from './ui'
 
@@ -156,6 +156,14 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
                   <LightBadge label="Salt" light={lights.sodium} />
                   <span className="ml-1"><QualityDot score={quality} /></span>
                 </div>
+                {(() => {
+                  const flag = pregnancyFoodFlag(selected.name, profile.pregnancy)
+                  return flag ? (
+                    <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                      🤰 <span className="font-semibold">Pregnancy check:</span> {flag.reason}
+                    </div>
+                  ) : null
+                })()}
               </div>
 
               <div>

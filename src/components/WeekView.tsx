@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, weekDates, todayStr, type Profile } from '../db'
-import { NHMRC_WEEKLY_SD_LIMIT, standardDrinks } from '../lib/nutrition'
+import { effectiveTargets, NHMRC_WEEKLY_SD_LIMIT, standardDrinks } from '../lib/nutrition'
 import { dayQuality, dayTotals } from './TodayView'
 import { MacroBar } from './ui'
 
@@ -19,7 +19,8 @@ export default function WeekView({ profile, date, onPickDay }: {
 
   const byDate = (d: string) => (weekEntries ?? []).filter((e) => e.date === d)
   const totals = dayTotals(weekEntries)
-  const t = profile.targets
+  const t = effectiveTargets(profile.targets, profile.weightKg, profile.pregnancy)
+  const pregnancyActive = profile.pregnancy && profile.pregnancy.state !== 'planning'
 
   // Weekly budget = 7× daily, but only count elapsed days for "on track" feel.
   const weeklySd = standardDrinks(totals.alcohol)
@@ -41,8 +42,10 @@ export default function WeekView({ profile, date, onPickDay }: {
           <MacroBar label="Fat" used={totals.fat} target={t.fat * 7} accent="bg-rose-400" />
         </div>
         <div className="flex justify-between pt-2 border-t border-gray-100 text-xs text-gray-500">
-          <span className={weeklySd > NHMRC_WEEKLY_SD_LIMIT ? 'text-red-600 font-semibold' : ''}>
-            🍷 {weeklySd.toFixed(1)}/{NHMRC_WEEKLY_SD_LIMIT} standard drinks
+          <span className={pregnancyActive ? (weeklySd > 0 ? 'text-red-600 font-semibold' : 'text-brand-700') : weeklySd > NHMRC_WEEKLY_SD_LIMIT ? 'text-red-600 font-semibold' : ''}>
+            {pregnancyActive
+              ? weeklySd > 0 ? `🍷 ${weeklySd.toFixed(1)} SD — none is safest` : '🍷 alcohol-free ✓'
+              : `🍷 ${weeklySd.toFixed(1)}/${NHMRC_WEEKLY_SD_LIMIT} standard drinks`}
           </span>
           {avgQuality != null && <span>Avg quality {avgQuality}/100</span>}
           <span>{daysWithFood}/7 days logged</span>

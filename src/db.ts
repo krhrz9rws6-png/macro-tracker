@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { ActivityKey, Goal, MacroTargets, Nutrients, Sex } from './lib/nutrition'
+import type { ActivityKey, Goal, MacroTargets, Nutrients, PregnancyStatus, Sex } from './lib/nutrition'
 
 export interface Profile {
   id?: number
@@ -12,7 +12,8 @@ export interface Profile {
   goal: Goal
   bmr: number
   tdee: number
-  targets: MacroTargets // daily; weekly budget = 7×daily
+  targets: MacroTargets // daily base; pregnancy adjustments applied via effectiveTargets()
+  pregnancy?: PregnancyStatus
   createdAt: number
 }
 

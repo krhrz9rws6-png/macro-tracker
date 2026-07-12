@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
 import { db, type Profile } from '../db'
 import {
-  ACTIVITY_LEVELS, GOAL_PRESETS, bmrMifflinStJeor, macroTargets, tdee,
-  type ActivityKey, type Goal,
+  ACTIVITY_LEVELS, GOAL_PRESETS, bmrMifflinStJeor, effectiveTargets, goalLockedOut,
+  macroTargets, pregnancyEnergyBump, tdee, trimesterOf,
+  type ActivityKey, type Goal, type PregnancyState,
 } from '../lib/nutrition'
+
+const PREG_STATES: { key: PregnancyState | 'off'; label: string }[] = [
+  { key: 'off', label: 'Off' },
+  { key: 'planning', label: 'Planning' },
+  { key: 'pregnant', label: 'Pregnant' },
+  { key: 'breastfeeding', label: 'Breastfeeding' },
+]
 
 export default function SettingsView({ profile }: { profile: Profile }) {
   const [age, setAge] = useState(String(profile.ageYears))
@@ -53,6 +61,7 @@ export default function SettingsView({ profile }: { profile: Profile }) {
     if (!confirm(`Delete ${profile.name}'s profile and all their logged food? This can't be undone.`)) return
     await db.log.where('profileId').equals(profile.id!).delete()
     await db.favorites.where('profileId').equals(profile.id!).delete()
+    await db.supplements.where('profileId').equals(profile.id!).delete()
     await db.profiles.delete(profile.id!)
   }
 
@@ -88,13 +97,21 @@ export default function SettingsView({ profile }: { profile: Profile }) {
         <div>
           <label className="text-xs text-gray-500">Goal</label>
           <div className="grid grid-cols-2 gap-2 mt-1">
-            {(Object.keys(GOAL_PRESETS) as Goal[]).map((g) => (
-              <button key={g} onClick={() => setGoal(g)}
-                className={`rounded-xl py-1.5 px-1 border text-sm ${goal === g ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
-                {GOAL_PRESETS[g].label}
-              </button>
-            ))}
+            {(Object.keys(GOAL_PRESETS) as Goal[]).map((g) => {
+              const locked = goalLockedOut(g, profile.pregnancy)
+              return (
+                <button key={g} onClick={() => !locked && setGoal(g)} disabled={locked}
+                  className={`rounded-xl py-1.5 px-1 border text-sm ${goal === g ? 'bg-brand-600 text-white border-brand-600' : locked ? 'bg-gray-50 border-gray-200 text-gray-300' : 'bg-white border-gray-300 text-gray-600'}`}>
+                  {GOAL_PRESETS[g].label}{locked && ' 🔒'}
+                </button>
+              )
+            })}
           </div>
+          {goalLockedOut('lose', profile.pregnancy) && (
+            <p className="text-[11px] text-gray-400 mt-1">
+              Weight-loss goals are unavailable during pregnancy and breastfeeding — the aim is healthy gain/maintenance.
+            </p>
+          )}
         </div>
         <div className="text-xs text-gray-500 pt-1">
           BMR {bmr} kcal · TDEE {tdeeVal} kcal → suggested {suggested.kcal} kcal,
@@ -105,6 +122,8 @@ export default function SettingsView({ profile }: { profile: Profile }) {
           Save & recalculate targets
         </button>
       </div>
+
+      <PregnancyCard profile={profile} />
 
       <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
         <div className="text-sm font-semibold">Hand-tuned targets</div>
@@ -130,6 +149,75 @@ export default function SettingsView({ profile }: { profile: Profile }) {
       <button onClick={deleteProfile} className="w-full text-center text-sm text-red-400 py-2">
         Delete this profile
       </button>
+    </div>
+  )
+}
+
+function PregnancyCard({ profile }: { profile: Profile }) {
+  const status = profile.pregnancy
+  const state: PregnancyState | 'off' = status?.state ?? 'off'
+  const [dueDate, setDueDate] = useState(status?.dueDate ?? '')
+
+  useEffect(() => { setDueDate(profile.pregnancy?.dueDate ?? '') }, [profile.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setState = async (s: PregnancyState | 'off') => {
+    if (s === 'off') {
+      await db.profiles.update(profile.id!, { pregnancy: undefined })
+    } else {
+      // Coming out of a lose goal is forced when entering pregnancy/breastfeeding.
+      const patch: Partial<Profile> = { pregnancy: { state: s, dueDate: dueDate || undefined } }
+      if (s !== 'planning' && profile.goal === 'lose') patch.goal = 'maintain'
+      await db.profiles.update(profile.id!, patch)
+    }
+  }
+
+  const saveDue = async (v: string) => {
+    setDueDate(v)
+    if (status) await db.profiles.update(profile.id!, { pregnancy: { ...status, dueDate: v || undefined } })
+  }
+
+  const eff = effectiveTargets(profile.targets, profile.weightKg, status)
+  const bump = pregnancyEnergyBump(status)
+
+  return (
+    <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
+      <div className="text-sm font-semibold">🤰 Pregnancy & breastfeeding</div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {PREG_STATES.map((s) => (
+          <button key={s.key} onClick={() => setState(s.key)}
+            className={`rounded-xl py-1.5 px-0.5 border text-[11px] font-medium ${state === s.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {state === 'pregnant' && (
+        <div>
+          <label className="text-xs text-gray-500">Due date (sets your trimester automatically)</label>
+          <input type="date" value={dueDate} onChange={(e) => saveDue(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-base" />
+        </div>
+      )}
+
+      {state !== 'off' && status && (
+        <div className="rounded-xl bg-brand-50 p-3 text-xs text-gray-600 space-y-1">
+          {state === 'pregnant' && (
+            <div className="font-semibold text-brand-800">
+              Trimester {trimesterOf(status)} · {bump > 0 ? `+${bump} kcal/day` : 'no extra calories needed yet — eating for 1.1, not 2'}
+            </div>
+          )}
+          {state === 'breastfeeding' && <div className="font-semibold text-brand-800">+500 kcal/day while breastfeeding</div>}
+          {state === 'planning' && <div className="font-semibold text-brand-800">Folate target raised — folic acid 500µg/day is recommended from now</div>}
+          <div>Today's targets: {eff.kcal} kcal · P{eff.protein} C{eff.carbs} F{eff.fat}</div>
+          <div>Micronutrient bars now use {state} daily values (iron, folate, iodine…). Caffeine gauge ≤200mg. Alcohol guidance: none is safest.</div>
+          <div className="text-gray-400 pt-1">Defaults from Australian guidelines — your GP/midwife's advice wins.</div>
+        </div>
+      )}
+      {state === 'off' && (
+        <p className="text-[11px] text-gray-400">
+          Adjusts calories by trimester, raises protein and micronutrient targets, adds a caffeine gauge and food-safety flags.
+        </p>
+      )}
     </div>
   )
 }

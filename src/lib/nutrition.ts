@@ -151,6 +151,66 @@ export function addNutrients(a: Nutrients, b: Partial<Nutrients>): Nutrients {
   return out
 }
 
+// ---------- Pregnancy & breastfeeding mode ----------
+// Defaults from Australian guidelines (NHMRC NRVs, Victorian Health, FSANZ).
+// Every value is a population default — the user's GP/midwife numbers win.
+
+export type PregnancyState = 'planning' | 'pregnant' | 'breastfeeding'
+
+export interface PregnancyStatus {
+  state: PregnancyState
+  dueDate?: string // YYYY-MM-DD; trimester derived when present
+  manualTrimester?: 1 | 2 | 3 // fallback when no due date
+}
+
+/** Gestation assumed 40 weeks. T1 = weeks 1–13, T2 = 14–27, T3 = 28+. */
+export function trimesterOf(status: PregnancyStatus, now = new Date()): 1 | 2 | 3 {
+  if (!status.dueDate) return status.manualTrimester ?? 1
+  const [y, m, d] = status.dueDate.split('-').map(Number)
+  const due = new Date(y, m - 1, d)
+  const weeksPregnant = 40 - (due.getTime() - now.getTime()) / (7 * 864e5)
+  if (weeksPregnant < 14) return 1
+  if (weeksPregnant < 28) return 2
+  return 3
+}
+
+/** Additional daily energy: T1 +0, T2 +340, T3 +450, breastfeeding +500 kcal. */
+export function pregnancyEnergyBump(status: PregnancyStatus | undefined, now = new Date()): number {
+  if (!status) return 0
+  if (status.state === 'breastfeeding') return 500
+  if (status.state !== 'pregnant') return 0
+  const t = trimesterOf(status, now)
+  return t === 1 ? 0 : t === 2 ? 340 : 450
+}
+
+/** Protein floor: pregnancy 1.0 g/kg (min 60 g), lactation 1.1 g/kg (min 67 g). */
+export function pregnancyProteinFloor(status: PregnancyStatus | undefined, weightKg: number): number {
+  if (!status) return 0
+  if (status.state === 'pregnant') return Math.max(60, Math.round(1.0 * weightKg))
+  if (status.state === 'breastfeeding') return Math.max(67, Math.round(1.1 * weightKg))
+  return 0
+}
+
+/** Daily targets with pregnancy adjustments applied (extra energy flows to carbs). */
+export function effectiveTargets(
+  base: MacroTargets, weightKg: number, status?: PregnancyStatus, now = new Date(),
+): MacroTargets {
+  const bump = pregnancyEnergyBump(status, now)
+  const protein = Math.max(base.protein, pregnancyProteinFloor(status, weightKg))
+  const extraProteinKcal = (protein - base.protein) * 4
+  const kcal = base.kcal + bump
+  const carbs = base.carbs + Math.max(0, Math.round((bump - extraProteinKcal) / 4))
+  return { kcal, protein, fat: base.fat, carbs }
+}
+
+export const PREGNANCY_CAFFEINE_LIMIT_MG = 200
+
+/** Goals not available while pregnant/breastfeeding (no deficits). */
+export function goalLockedOut(goal: Goal, status?: PregnancyStatus): boolean {
+  if (!status || status.state === 'planning') return false
+  return goal === 'lose'
+}
+
 /** Adult daily values used for the micronutrient overview (AU NRVs, women 19–50). */
 export const MICRO_DV = [
   { key: 'fiber', label: 'Fiber', dv: 28, unit: 'g' },
@@ -167,6 +227,52 @@ export const MICRO_DV = [
   { key: 'vitE', label: 'Vit E', dv: 7, unit: 'mg' },
   { key: 'potassium', label: 'Potassium', dv: 2800, unit: 'mg' },
 ] as const satisfies readonly { key: keyof Nutrients; label: string; dv: number; unit: string }[]
+
+export interface MicroDVEntry { key: keyof Nutrients; label: string; dv: number; unit: string }
+
+// AU NRV pregnancy / lactation RDIs where they differ from the adult female baseline.
+const PREGNANT_DV_OVERRIDES: Partial<Record<keyof Nutrients, number>> = {
+  iron: 27, folate: 600, iodine: 220, zinc: 11, vitC: 60, vitA: 800, b12: 2.6, magnesium: 350,
+}
+const BREASTFEEDING_DV_OVERRIDES: Partial<Record<keyof Nutrients, number>> = {
+  iron: 9, folate: 500, iodine: 270, zinc: 12, vitC: 85, vitA: 1100, b12: 2.8, fiber: 30,
+}
+// Planning: folate target raised early — supplementation is recommended pre-conception.
+const PLANNING_DV_OVERRIDES: Partial<Record<keyof Nutrients, number>> = { folate: 600 }
+
+export function microDVsFor(status?: PregnancyStatus): MicroDVEntry[] {
+  const overrides =
+    status?.state === 'pregnant' ? PREGNANT_DV_OVERRIDES :
+    status?.state === 'breastfeeding' ? BREASTFEEDING_DV_OVERRIDES :
+    status?.state === 'planning' ? PLANNING_DV_OVERRIDES : {}
+  return MICRO_DV.map((m) => ({ ...m, dv: overrides[m.key] ?? m.dv }))
+}
+
+// ---------- Pregnancy food-safety flags (FSANZ / NSW Food Authority) ----------
+
+export interface FoodSafetyFlag { reason: string }
+
+const PREG_FOOD_FLAGS: { re: RegExp; reason: string }[] = [
+  { re: /\b(brie|camembert|ricotta|feta|blue vein|soft chees|quark)\b/i, reason: 'Soft cheese — listeria risk unless cooked until steaming' },
+  { re: /p[âa]t[ée]|meat paste|meat spread/i, reason: 'Refrigerated pâté/meat spread — listeria risk' },
+  { re: /\b(salami|prosciutto|pastrami|luncheon|devon|mortadella|deli meat|silverside, cured)\b/i, reason: 'Ready-to-eat deli meat — listeria risk unless cooked' },
+  { re: /\bham\b(?!burger)/i, reason: 'Ready-to-eat deli meat — listeria risk unless cooked' },
+  { re: /smoked salmon|gravlax|sashimi|sushi|raw fish|oyster|prawn, cooked, chilled/i, reason: 'Chilled/raw seafood — listeria risk; cooked fresh is fine' },
+  { re: /\bsprouts?, (alfalfa|raw)|alfalfa/i, reason: 'Raw sprouts — listeria risk' },
+  { re: /rockmelon|cantaloupe/i, reason: 'Rockmelon — listeria risk (FSANZ advice)' },
+  { re: /soft.?serve/i, reason: 'Soft-serve — listeria risk' },
+  { re: /unpasteurised|raw milk/i, reason: 'Unpasteurised — listeria risk' },
+  { re: /\b(egg, raw|raw egg|aioli|homemade mayonnaise)\b/i, reason: 'Raw egg — salmonella risk' },
+  { re: /swordfish|marlin|broadbill|shark|\bflake\b/i, reason: 'High-mercury fish — max 1 serve per fortnight (FSANZ)' },
+  { re: /orange roughy|deep sea perch|catfish/i, reason: 'Moderate-mercury fish — max 1 serve per week (FSANZ)' },
+]
+
+/** Returns a caution for pregnancy profiles, or null. Informational, never blocking. */
+export function pregnancyFoodFlag(foodName: string, status?: PregnancyStatus): FoodSafetyFlag | null {
+  if (status?.state !== 'pregnant') return null
+  for (const f of PREG_FOOD_FLAGS) if (f.re.test(foodName)) return { reason: f.reason }
+  return null
+}
 
 // ---------- Alcohol ----------
 

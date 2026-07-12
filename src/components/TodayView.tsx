@@ -3,8 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, MEAL_SLOTS, type LogEntry, type MealSlot, type Profile } from '../db'
 import { getFood } from '../lib/afcd'
 import {
-  addNutrients, EMPTY_NUTRIENTS, MICRO_DV, NHMRC_DAILY_SD_LIMIT, qualityScore,
-  standardDrinks, type Nutrients,
+  addNutrients, effectiveTargets, EMPTY_NUTRIENTS, microDVsFor, NHMRC_DAILY_SD_LIMIT,
+  PREGNANCY_CAFFEINE_LIMIT_MG, qualityScore, standardDrinks, trimesterOf, type Nutrients,
 } from '../lib/nutrition'
 import SupplementsCard from './SupplementsCard'
 import { MacroBar, Ring } from './ui'
@@ -40,10 +40,13 @@ export default function TodayView({ profile, date, onAdd }: {
 }) {
   const entries = useDayEntries(profile.id!, date)
   const totals = dayTotals(entries)
-  const t = profile.targets
+  const preg = profile.pregnancy
+  const t = effectiveTargets(profile.targets, profile.weightKg, preg)
   const quality = dayQuality(entries)
   const sd = standardDrinks(totals.alcohol)
   const [showMicros, setShowMicros] = useState(false)
+  const microDVs = microDVsFor(preg)
+  const pregnancyActive = preg && preg.state !== 'planning'
 
   return (
     <div className="p-4 space-y-4">
@@ -72,7 +75,7 @@ export default function TodayView({ profile, date, onAdd }: {
         </div>
         {showMicros && (
           <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
-            {MICRO_DV.map((m) => {
+            {microDVs.map((m) => {
               const val = totals[m.key]
               const pct = Math.min(100, (val / m.dv) * 100)
               return (
@@ -88,13 +91,28 @@ export default function TodayView({ profile, date, onAdd }: {
               )
             })}
             <div className="col-span-2 text-[10px] text-gray-400">
-              vs adult daily values (women 19–50) · food + supplements combined
+              vs {preg ? `${preg.state} daily values` : 'adult daily values (women 19–50)'} · food + supplements combined
             </div>
           </div>
         )}
-        {sd > 0.05 && (
+        {sd > 0.05 && !pregnancyActive && (
           <div className={`mt-2 text-xs font-medium ${sd > NHMRC_DAILY_SD_LIMIT ? 'text-red-600' : 'text-purple-700'}`}>
             🍷 {sd.toFixed(1)} standard drinks today {sd > NHMRC_DAILY_SD_LIMIT && '— above the ≤4/day guideline'}
+          </div>
+        )}
+        {sd > 0.05 && pregnancyActive && (
+          <div className="mt-2 text-xs font-medium text-red-600">
+            🍷 {sd.toFixed(1)} standard drinks — guideline: no safe level of alcohol in {preg!.state === 'pregnant' ? 'pregnancy' : 'breastfeeding'}
+          </div>
+        )}
+        {pregnancyActive && (
+          <div className="mt-2 flex items-center justify-between text-xs">
+            <span className="font-medium text-brand-800">
+              {preg!.state === 'pregnant' ? `🤰 Trimester ${trimesterOf(preg!)}` : '🤱 Breastfeeding'}
+            </span>
+            <span className={`font-medium ${totals.caffeine > PREGNANCY_CAFFEINE_LIMIT_MG ? 'text-red-600' : 'text-gray-500'}`}>
+              ☕ {Math.round(totals.caffeine)}/{PREGNANCY_CAFFEINE_LIMIT_MG}mg caffeine
+            </span>
           </div>
         )}
       </div>
