@@ -92,9 +92,23 @@ export const GENERIC_MEASURES: Measure[] = [
   { label: 'tsp (5ml)', grams: 5, approx: true },
 ]
 
+// Curated additions for common foods the AFCD measure file misses.
+// Matched by name; grams are estimates (flagged approx).
+const CURATED_MEASURES: { match: RegExp; label: string; grams: number }[] = [
+  // AFCD regular egg = 44g edible; yolk ≈ 36%, white ≈ 64%.
+  { match: /^egg, chicken, yolk/i, label: 'yolk of 1 egg', grams: 16 },
+  { match: /^egg, chicken, white/i, label: 'white of 1 egg', grams: 28 },
+  { match: /^egg, chicken, whole.*(scrambled|omelette)/i, label: 'made from 1 egg', grams: 50 },
+]
+
 /** Food-specific measures (AFCD measure file, e.g. "can — 379g"), if any. */
 export function foodMeasures(foodId: string): Measure[] {
-  return (measuresById[foodId] ?? []).map(([label, grams]) => ({ label, grams }))
+  const fromFile = (measuresById[foodId] ?? []).map(([label, grams]): Measure => ({ label, grams }))
+  if (fromFile.length > 0) return fromFile
+  const food = byId.get(foodId)
+  if (!food) return []
+  const curated = CURATED_MEASURES.find((c) => c.match.test(food.name))
+  return curated ? [{ label: curated.label, grams: curated.grams, approx: true }] : []
 }
 
 // Beverages are AFCD classification major group 29 (non-alcoholic) / alcohol in 291-293.

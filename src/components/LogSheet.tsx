@@ -46,30 +46,32 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
     [profile.id],
   )
 
+  // `grams` holds ONE portion; `qty` multiplies it. Total = grams × qty.
   const pick = (f: Food, g = 100, s?: MealSlot, autoUnit = false) => {
     setSelected(f)
     if (s) setSlot(s)
     else if (isBeverage(f)) setSlot(f.alcohol > 0 ? 'drink' : slot)
-    // Default to the food's own household measure when it has one ("1 can", "1 slice").
+    setQty(1)
+    // Default to the food's own household measure when it has one ("1 can", "1 egg").
     const specific = autoUnit ? foodMeasures(f.id) : []
     if (specific.length > 0) {
-      setUnit(specific[0]); setQty(1)
+      setUnit(specific[0])
       setGrams(Math.round(specific[0].grams)); setBaseGrams(Math.round(specific[0].grams))
     } else {
-      setUnit(null); setQty(1)
+      setUnit(null)
       setGrams(g); setBaseGrams(g)
     }
   }
 
   const chooseUnit = (u: Measure | null) => {
     setUnit(u)
-    if (u) { setQty(1); setGrams(Math.round(u.grams)) }
+    setQty(1)
+    if (u) { setGrams(Math.round(u.grams)); setBaseGrams(Math.round(u.grams)) }
   }
 
   const setQuantity = (q: number) => {
-    if (!unit || !Number.isFinite(q) || q < 0) return
+    if (!Number.isFinite(q) || q < 0) return
     setQty(q)
-    setGrams(Math.round(unit.grams * q))
   }
 
   const pickQuickDrink = (q: { query: string; grams: number }) => {
@@ -77,7 +79,8 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
     if (f) pick(f, q.grams, 'drink')
   }
 
-  const scaled = selected ? scaleFood(selected, grams) : null
+  const totalGrams = Math.max(0, Math.round(grams * qty))
+  const scaled = selected ? scaleFood(selected, totalGrams) : null
   const lights = selected ? trafficLights(selected, isBeverage(selected)) : null
   const quality = selected ? qualityScore(selected) : null
   const sd = scaled && scaled.alcohol > 0 ? standardDrinks(scaled.alcohol) : 0
@@ -86,12 +89,12 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
     if (!selected || !scaled) return
     await db.log.add({
       profileId: profile.id!, date, slot, foodId: selected.id, name: selected.name,
-      grams, nutrients: scaled, source: slot === 'drink' ? 'quickdrink' : 'search',
+      grams: totalGrams, nutrients: scaled, source: slot === 'drink' ? 'quickdrink' : 'search',
       createdAt: Date.now(),
     })
     const existing = await db.favorites.where('[profileId+foodId]').equals([profile.id!, selected.id]).first()
-    if (existing) await db.favorites.update(existing.id!, { uses: existing.uses + 1, lastUsed: Date.now(), grams })
-    else await db.favorites.add({ profileId: profile.id!, foodId: selected.id, name: selected.name, grams, slot, uses: 1, lastUsed: Date.now() })
+    if (existing) await db.favorites.update(existing.id!, { uses: existing.uses + 1, lastUsed: Date.now(), grams: totalGrams })
+    else await db.favorites.add({ profileId: profile.id!, foodId: selected.id, name: selected.name, grams: totalGrams, slot, uses: 1, lastUsed: Date.now() })
     onClose()
   }
 
@@ -213,27 +216,7 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
                   ))}
                 </div>
 
-                {unit ? (
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => setQuantity(Math.max(0.25, qty - (qty <= 1 ? 0.25 : 0.5)))}
-                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">−</button>
-                      <input
-                        className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold"
-                        inputMode="decimal" value={qty}
-                        onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
-                      />
-                      <button onClick={() => setQuantity(qty + (qty < 1 ? 0.25 : 0.5))}
-                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">+</button>
-                      <div className="flex-1 text-right text-sm text-gray-500">
-                        {qty} × {unit.label} <span className="font-semibold text-gray-700">= {grams}g</span>
-                      </div>
-                    </div>
-                    {unit.approx && (
-                      <p className="text-[10px] text-gray-400 mt-1">Volume converted at water density — closest for liquids; use grams for dry foods if you can.</p>
-                    )}
-                  </div>
-                ) : (
+                {!unit && (
                   <div>
                     <div className="flex gap-2 mb-2">
                       {SIZE_PRESETS.map((s) => (
@@ -256,6 +239,30 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
                       <span className="text-sm text-gray-400">g</span>
                     </div>
                   </div>
+                )}
+
+                {/* Universal quantity — works for grams and unit portions alike */}
+                <div className="flex items-center gap-3 mt-2">
+                  <button onClick={() => setQuantity(Math.max(0.25, qty - (qty <= 1 ? 0.25 : 0.5)))}
+                    className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">−</button>
+                  <input
+                    className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold"
+                    inputMode="decimal" value={qty}
+                    onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
+                  />
+                  <button onClick={() => setQuantity(qty + (qty < 1 ? 0.25 : 0.5))}
+                    className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">+</button>
+                  <div className="flex-1 text-right text-sm text-gray-500">
+                    {qty} × {unit ? unit.label : `${grams}g`}{' '}
+                    <span className="font-semibold text-gray-700">= {totalGrams}g</span>
+                  </div>
+                </div>
+                {unit?.approx && (
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {unit.label.includes('ml') || unit.label.includes('cup') || unit.label.includes('tbsp') || unit.label.includes('tsp')
+                      ? 'Volume converted at water density — closest for liquids; use grams for dry foods if you can.'
+                      : 'Estimated weight — tap grams to enter an exact amount.'}
+                  </p>
                 )}
               </div>
 
