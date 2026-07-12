@@ -10,7 +10,7 @@ export default defineConfig({
       output: {
         // The AFCD data rarely changes — keep it in its own chunk so app
         // updates don't force phones to re-download 233KB of food data.
-        manualChunks: (id) => (id.includes('data/afcd.json') ? 'afcd' : undefined),
+        manualChunks: (id) => (id.includes('/src/data/') ? 'afcd' : undefined),
       },
     },
   },

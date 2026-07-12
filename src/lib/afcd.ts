@@ -1,4 +1,5 @@
 import raw from '../data/afcd.json'
+import rawMeasures from '../data/measures.json'
 
 // AFCD Release 3 (FSANZ) — values per 100g edible portion.
 export interface Food {
@@ -76,6 +77,25 @@ export const getFood = (id: string) => byId.get(id)
 
 // Precomputed once — searching runs on every keystroke.
 const lcNames = foods.map((f) => f.name.toLowerCase())
+
+// ---------- Portion units ----------
+
+export interface Measure { label: string; grams: number; approx?: boolean }
+
+const measuresById = rawMeasures as unknown as Record<string, [string, number][]>
+
+/** AU household measures; volume→grams is approximate for non-liquids. */
+export const GENERIC_MEASURES: Measure[] = [
+  { label: 'ml', grams: 1, approx: true },
+  { label: 'cup (250ml)', grams: 250, approx: true },
+  { label: 'tbsp (20ml)', grams: 20, approx: true },
+  { label: 'tsp (5ml)', grams: 5, approx: true },
+]
+
+/** Food-specific measures (AFCD measure file, e.g. "can — 379g"), if any. */
+export function foodMeasures(foodId: string): Measure[] {
+  return (measuresById[foodId] ?? []).map(([label, grams]) => ({ label, grams }))
+}
 
 // Beverages are AFCD classification major group 29 (non-alcoholic) / alcohol in 291-293.
 export const isBeverage = (f: Food) => f.classification.startsWith('29')

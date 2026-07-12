@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, MEAL_SLOTS, type MealSlot, type Profile } from '../db'
-import { getFood, isBeverage, searchFoods, type Food } from '../lib/afcd'
+import { foodMeasures, GENERIC_MEASURES, getFood, isBeverage, searchFoods, type Food, type Measure } from '../lib/afcd'
 import {
   pregnancyFoodFlag, qualityScore, scaleFood, standardDrinks, trafficLights, type Nutrients,
 } from '../lib/nutrition'
@@ -31,6 +31,8 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
   const [selected, setSelected] = useState<Food | null>(null)
   const [grams, setGrams] = useState(100)
   const [baseGrams, setBaseGrams] = useState(100)
+  const [unit, setUnit] = useState<Measure | null>(null)
+  const [qty, setQty] = useState(1)
   const [slot, setSlot] = useState<MealSlot>(defaultSlot)
 
   const results = useMemo(() => searchFoods(query), [query])
@@ -44,12 +46,30 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
     [profile.id],
   )
 
-  const pick = (f: Food, g = 100, s?: MealSlot) => {
+  const pick = (f: Food, g = 100, s?: MealSlot, autoUnit = false) => {
     setSelected(f)
-    setGrams(g)
-    setBaseGrams(g)
     if (s) setSlot(s)
     else if (isBeverage(f)) setSlot(f.alcohol > 0 ? 'drink' : slot)
+    // Default to the food's own household measure when it has one ("1 can", "1 slice").
+    const specific = autoUnit ? foodMeasures(f.id) : []
+    if (specific.length > 0) {
+      setUnit(specific[0]); setQty(1)
+      setGrams(Math.round(specific[0].grams)); setBaseGrams(Math.round(specific[0].grams))
+    } else {
+      setUnit(null); setQty(1)
+      setGrams(g); setBaseGrams(g)
+    }
+  }
+
+  const chooseUnit = (u: Measure | null) => {
+    setUnit(u)
+    if (u) { setQty(1); setGrams(Math.round(u.grams)) }
+  }
+
+  const setQuantity = (q: number) => {
+    if (!unit || !Number.isFinite(q) || q < 0) return
+    setQty(q)
+    setGrams(Math.round(unit.grams * q))
   }
 
   const pickQuickDrink = (q: { query: string; grams: number }) => {
@@ -132,7 +152,7 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
           {!selected && query && (
             <div className="p-2">
               {results.map((f) => (
-                <button key={f.id} onClick={() => pick(f)}
+                <button key={f.id} onClick={() => pick(f, 100, undefined, true)}
                   className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100">
                   <div className="text-sm">{f.name}</div>
                   <div className="text-xs text-gray-400 flex gap-2 items-center">
@@ -167,26 +187,69 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
               </div>
 
               <div>
-                <div className="flex gap-2 mb-2">
-                  {SIZE_PRESETS.map((s) => (
-                    <button key={s.label} onClick={() => setGrams(Math.round(baseGrams * s.factor))}
-                      className={`flex-1 py-2 rounded-xl border text-sm font-medium ${Math.round(baseGrams * s.factor) === grams ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
-                      {s.label}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  <button onClick={() => chooseUnit(null)}
+                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium ${!unit ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                    grams
+                  </button>
+                  {foodMeasures(selected.id).map((m) => (
+                    <button key={m.label} onClick={() => chooseUnit(m)}
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium ${unit?.label === m.label ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                      {m.label} · {Math.round(m.grams)}g
+                    </button>
+                  ))}
+                  {GENERIC_MEASURES.map((m) => (
+                    <button key={m.label} onClick={() => chooseUnit(m)}
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium ${unit?.label === m.label ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-500'}`}>
+                      {m.label}
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-3">
-                  <input type="range" min={10} max={600} step={5} value={grams}
-                    onChange={(e) => setGrams(Number(e.target.value))} className="flex-1 accent-brand-600" />
-                  <div className="w-20">
-                    <input
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-right text-sm"
-                      inputMode="numeric" value={grams}
-                      onChange={(e) => setGrams(Math.max(0, Number(e.target.value) || 0))}
-                    />
+
+                {unit ? (
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setQuantity(Math.max(0.25, qty - (qty <= 1 ? 0.25 : 0.5)))}
+                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">−</button>
+                      <input
+                        className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold"
+                        inputMode="decimal" value={qty}
+                        onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
+                      />
+                      <button onClick={() => setQuantity(qty + (qty < 1 ? 0.25 : 0.5))}
+                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">+</button>
+                      <div className="flex-1 text-right text-sm text-gray-500">
+                        {qty} × {unit.label} <span className="font-semibold text-gray-700">= {grams}g</span>
+                      </div>
+                    </div>
+                    {unit.approx && (
+                      <p className="text-[10px] text-gray-400 mt-1">Volume converted at water density — closest for liquids; use grams for dry foods if you can.</p>
+                    )}
                   </div>
-                  <span className="text-sm text-gray-400">g</span>
-                </div>
+                ) : (
+                  <div>
+                    <div className="flex gap-2 mb-2">
+                      {SIZE_PRESETS.map((s) => (
+                        <button key={s.label} onClick={() => setGrams(Math.round(baseGrams * s.factor))}
+                          className={`flex-1 py-2 rounded-xl border text-sm font-medium ${Math.round(baseGrams * s.factor) === grams ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input type="range" min={10} max={600} step={5} value={grams}
+                        onChange={(e) => setGrams(Number(e.target.value))} className="flex-1 accent-brand-600" />
+                      <div className="w-20">
+                        <input
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-right text-sm"
+                          inputMode="numeric" value={grams}
+                          onChange={(e) => setGrams(Math.max(0, Number(e.target.value) || 0))}
+                        />
+                      </div>
+                      <span className="text-sm text-gray-400">g</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-2xl bg-gray-50 border border-gray-200 p-3">
