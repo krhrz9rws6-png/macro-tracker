@@ -96,15 +96,22 @@ export interface Nutrients {
   calcium: number
   iron: number
   magnesium: number
+  zinc: number
+  iodine: number
+  folate: number
+  b12: number
   vitA: number
   vitC: number
+  vitD: number
   vitE: number
+  caffeine: number
 }
 
 export const EMPTY_NUTRIENTS: Nutrients = {
   kcal: 0, protein: 0, fat: 0, carbs: 0, sugars: 0, addedSugars: 0, fiber: 0,
   satFat: 0, transFat: 0, alcohol: 0, sodium: 0, potassium: 0, calcium: 0,
-  iron: 0, magnesium: 0, vitA: 0, vitC: 0, vitE: 0,
+  iron: 0, magnesium: 0, zinc: 0, iodine: 0, folate: 0, b12: 0,
+  vitA: 0, vitC: 0, vitD: 0, vitE: 0, caffeine: 0,
 }
 
 export function scaleFood(f: Food, grams: number): Nutrients {
@@ -125,17 +132,41 @@ export function scaleFood(f: Food, grams: number): Nutrients {
     calcium: f.calcium * k,
     iron: f.iron * k,
     magnesium: f.magnesium * k,
+    zinc: f.zinc * k,
+    iodine: f.iodine * k,
+    folate: f.folate * k,
+    b12: f.b12 * k,
     vitA: f.vitA * k,
     vitC: f.vitC * k,
+    vitD: f.vitD * k,
     vitE: f.vitE * k,
+    caffeine: f.caffeine * k,
   }
 }
 
-export function addNutrients(a: Nutrients, b: Nutrients): Nutrients {
+export function addNutrients(a: Nutrients, b: Partial<Nutrients>): Nutrients {
   const out = { ...a }
-  for (const key of Object.keys(out) as (keyof Nutrients)[]) out[key] += b[key]
+  // `?? 0` guards entries logged before newer nutrient fields existed.
+  for (const key of Object.keys(out) as (keyof Nutrients)[]) out[key] += b[key] ?? 0
   return out
 }
+
+/** Adult daily values used for the micronutrient overview (AU NRVs, women 19–50). */
+export const MICRO_DV = [
+  { key: 'fiber', label: 'Fiber', dv: 28, unit: 'g' },
+  { key: 'iron', label: 'Iron', dv: 18, unit: 'mg' },
+  { key: 'calcium', label: 'Calcium', dv: 1000, unit: 'mg' },
+  { key: 'magnesium', label: 'Magnesium', dv: 320, unit: 'mg' },
+  { key: 'zinc', label: 'Zinc', dv: 8, unit: 'mg' },
+  { key: 'iodine', label: 'Iodine', dv: 150, unit: 'µg' },
+  { key: 'folate', label: 'Folate', dv: 400, unit: 'µg' },
+  { key: 'b12', label: 'B12', dv: 2.4, unit: 'µg' },
+  { key: 'vitA', label: 'Vit A', dv: 700, unit: 'µg' },
+  { key: 'vitC', label: 'Vit C', dv: 45, unit: 'mg' },
+  { key: 'vitD', label: 'Vit D', dv: 10, unit: 'µg' },
+  { key: 'vitE', label: 'Vit E', dv: 7, unit: 'mg' },
+  { key: 'potassium', label: 'Potassium', dv: 2800, unit: 'mg' },
+] as const satisfies readonly { key: keyof Nutrients; label: string; dv: number; unit: string }[]
 
 // ---------- Alcohol ----------
 

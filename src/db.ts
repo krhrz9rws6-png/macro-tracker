@@ -16,7 +16,7 @@ export interface Profile {
   createdAt: number
 }
 
-export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'drink'
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'drink' | 'supplement'
 
 export const MEAL_SLOTS: { key: MealSlot; label: string; emoji: string }[] = [
   { key: 'breakfast', label: 'Breakfast', emoji: '🍳' },
@@ -35,7 +35,18 @@ export interface LogEntry {
   name: string
   grams: number
   nutrients: Nutrients // snapshot, already scaled to `grams`
-  source: 'search' | 'recipe' | 'barcode' | 'photo' | 'quickdrink'
+  source: 'search' | 'recipe' | 'barcode' | 'photo' | 'quickdrink' | 'supplement'
+  supplementId?: number
+  createdAt: number
+}
+
+/** A supplement in a profile's cabinet: nutrient content per single dose. */
+export interface Supplement {
+  id?: number
+  profileId: number
+  name: string
+  doseLabel: string // e.g. "1 tablet", "1 scoop (30g)"
+  nutrients: Partial<Nutrients> // per dose
   createdAt: number
 }
 
@@ -55,12 +66,17 @@ export const db = new Dexie('macro-tracker') as Dexie & {
   profiles: EntityTable<Profile, 'id'>
   log: EntityTable<LogEntry, 'id'>
   favorites: EntityTable<Favorite, 'id'>
+  supplements: EntityTable<Supplement, 'id'>
 }
 
 db.version(1).stores({
   profiles: '++id, name',
   log: '++id, [profileId+date], profileId, date',
   favorites: '++id, [profileId+foodId], profileId, uses',
+})
+
+db.version(2).stores({
+  supplements: '++id, profileId',
 })
 
 export const todayStr = (d = new Date()) => {

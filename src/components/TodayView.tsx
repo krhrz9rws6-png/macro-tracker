@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, MEAL_SLOTS, type LogEntry, type MealSlot, type Profile } from '../db'
 import { getFood } from '../lib/afcd'
 import {
-  addNutrients, EMPTY_NUTRIENTS, NHMRC_DAILY_SD_LIMIT, qualityScore,
+  addNutrients, EMPTY_NUTRIENTS, MICRO_DV, NHMRC_DAILY_SD_LIMIT, qualityScore,
   standardDrinks, type Nutrients,
 } from '../lib/nutrition'
+import SupplementsCard from './SupplementsCard'
 import { MacroBar, Ring } from './ui'
 
 export function useDayEntries(profileId: number, date: string) {
@@ -41,6 +43,7 @@ export default function TodayView({ profile, date, onAdd }: {
   const t = profile.targets
   const quality = dayQuality(entries)
   const sd = standardDrinks(totals.alcohol)
+  const [showMicros, setShowMicros] = useState(false)
 
   return (
     <div className="p-4 space-y-4">
@@ -57,19 +60,46 @@ export default function TodayView({ profile, date, onAdd }: {
           </div>
         </div>
         <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-          <span>Fiber {Math.round(totals.fiber)}g · Sugar {Math.round(totals.sugars)}g · Salt {(totals.sodium / 1000 * 2.5).toFixed(1)}g</span>
+          <button onClick={() => setShowMicros(!showMicros)} className="text-left">
+            Fiber {Math.round(totals.fiber)}g · Sugar {Math.round(totals.sugars)}g · Salt {(totals.sodium / 1000 * 2.5).toFixed(1)}g
+            <span className="ml-1 text-brand-700 font-medium">{showMicros ? '▴' : '▾ micros'}</span>
+          </button>
           {quality != null && (
             <span className="font-medium">
               Quality <span className={quality >= 55 ? 'text-green-600' : quality >= 30 ? 'text-amber-600' : 'text-red-500'}>{quality}</span>/100
             </span>
           )}
         </div>
+        {showMicros && (
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {MICRO_DV.map((m) => {
+              const val = totals[m.key]
+              const pct = Math.min(100, (val / m.dv) * 100)
+              return (
+                <div key={m.key}>
+                  <div className="flex justify-between text-[11px] text-gray-500">
+                    <span>{m.label}</span>
+                    <span>{val >= 100 ? Math.round(val) : Math.round(val * 10) / 10}/{m.dv}{m.unit}</span>
+                  </div>
+                  <div className="h-1 rounded-full bg-gray-100 overflow-hidden">
+                    <div className={`h-full rounded-full ${pct >= 100 ? 'bg-green-500' : pct >= 50 ? 'bg-brand-400' : 'bg-amber-300'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+            <div className="col-span-2 text-[10px] text-gray-400">
+              vs adult daily values (women 19–50) · food + supplements combined
+            </div>
+          </div>
+        )}
         {sd > 0.05 && (
           <div className={`mt-2 text-xs font-medium ${sd > NHMRC_DAILY_SD_LIMIT ? 'text-red-600' : 'text-purple-700'}`}>
             🍷 {sd.toFixed(1)} standard drinks today {sd > NHMRC_DAILY_SD_LIMIT && '— above the ≤4/day guideline'}
           </div>
         )}
       </div>
+
+      <SupplementsCard profile={profile} date={date} entries={entries ?? []} />
 
       {MEAL_SLOTS.map((s) => {
         const slotEntries = (entries ?? []).filter((e) => e.slot === s.key)

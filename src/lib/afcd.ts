@@ -30,6 +30,7 @@ export interface Food {
   b12: number
   cholesterol: number
   caffeine: number
+  iodine: number
   classification: string
 }
 
@@ -66,7 +67,8 @@ export const foods: Food[] = (raw as { foods: Row[] }).foods.map((r) => ({
   b12: z(r[25]),
   cholesterol: z(r[26]),
   caffeine: z(r[27]),
-  classification: (r[28] as string) ?? '',
+  iodine: z(r[28]),
+  classification: (r[29] as string) ?? '',
 }))
 
 const byId = new Map(foods.map((f) => [f.id, f]))
