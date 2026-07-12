@@ -1,0 +1,135 @@
+import { useEffect, useState } from 'react'
+import { db, type Profile } from '../db'
+import {
+  ACTIVITY_LEVELS, GOAL_PRESETS, bmrMifflinStJeor, macroTargets, tdee,
+  type ActivityKey, type Goal,
+} from '../lib/nutrition'
+
+export default function SettingsView({ profile }: { profile: Profile }) {
+  const [age, setAge] = useState(String(profile.ageYears))
+  const [height, setHeight] = useState(String(profile.heightCm))
+  const [weight, setWeight] = useState(String(profile.weightKg))
+  const [activity, setActivity] = useState<ActivityKey>(profile.activity)
+  const [goal, setGoal] = useState<Goal>(profile.goal)
+  const [kcal, setKcal] = useState(String(profile.targets.kcal))
+  const [protein, setProtein] = useState(String(profile.targets.protein))
+  const [carbs, setCarbs] = useState(String(profile.targets.carbs))
+  const [fat, setFat] = useState(String(profile.targets.fat))
+  const [saved, setSaved] = useState(false)
+
+  // Re-sync the form when switching profiles.
+  useEffect(() => {
+    setAge(String(profile.ageYears)); setHeight(String(profile.heightCm))
+    setWeight(String(profile.weightKg)); setActivity(profile.activity); setGoal(profile.goal)
+    setKcal(String(profile.targets.kcal)); setProtein(String(profile.targets.protein))
+    setCarbs(String(profile.targets.carbs)); setFat(String(profile.targets.fat))
+  }, [profile.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ageN = parseInt(age), heightN = parseFloat(height), weightN = parseFloat(weight)
+  const statsValid = ageN > 0 && heightN > 0 && weightN > 0
+  const bmr = statsValid ? bmrMifflinStJeor(profile.sex, weightN, heightN, ageN) : profile.bmr
+  const tdeeVal = tdee(bmr, activity)
+  const suggested = statsValid ? macroTargets(tdeeVal, goal, weightN) : profile.targets
+
+  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 1500) }
+
+  const saveStats = async (useSuggested: boolean) => {
+    if (!statsValid) return
+    const targets = useSuggested
+      ? suggested
+      : { kcal: parseInt(kcal) || 0, protein: parseInt(protein) || 0, carbs: parseInt(carbs) || 0, fat: parseInt(fat) || 0 }
+    await db.profiles.update(profile.id!, {
+      ageYears: ageN, heightCm: heightN, weightKg: weightN, activity, goal,
+      bmr, tdee: tdeeVal, targets,
+    })
+    if (useSuggested) {
+      setKcal(String(targets.kcal)); setProtein(String(targets.protein))
+      setCarbs(String(targets.carbs)); setFat(String(targets.fat))
+    }
+    flash()
+  }
+
+  const deleteProfile = async () => {
+    if (!confirm(`Delete ${profile.name}'s profile and all their logged food? This can't be undone.`)) return
+    await db.log.where('profileId').equals(profile.id!).delete()
+    await db.favorites.where('profileId').equals(profile.id!).delete()
+    await db.profiles.delete(profile.id!)
+  }
+
+  const input = 'w-full rounded-xl border border-gray-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand-500'
+  const targetsDiffer =
+    parseInt(kcal) !== suggested.kcal || parseInt(protein) !== suggested.protein ||
+    parseInt(carbs) !== suggested.carbs || parseInt(fat) !== suggested.fat
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
+        <div className="text-sm font-semibold">{profile.name} — stats</div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-gray-500">Age</label>
+            <input className={input} inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Height cm</label>
+            <input className={input} inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Weight kg</label>
+            <input className={input} inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Activity</label>
+          <select className={input} value={activity} onChange={(e) => setActivity(e.target.value as ActivityKey)}>
+            {ACTIVITY_LEVELS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Goal</label>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {(Object.keys(GOAL_PRESETS) as Goal[]).map((g) => (
+              <button key={g} onClick={() => setGoal(g)}
+                className={`rounded-xl py-1.5 px-1 border text-sm ${goal === g ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                {GOAL_PRESETS[g].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="text-xs text-gray-500 pt-1">
+          BMR {bmr} kcal · TDEE {tdeeVal} kcal → suggested {suggested.kcal} kcal,
+          P{suggested.protein} C{suggested.carbs} F{suggested.fat}
+        </div>
+        <button onClick={() => saveStats(true)} disabled={!statsValid}
+          className="w-full rounded-xl bg-brand-600 text-white font-semibold py-2.5 disabled:opacity-40">
+          Save & recalculate targets
+        </button>
+      </div>
+
+      <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
+        <div className="text-sm font-semibold">Hand-tuned targets</div>
+        <p className="text-xs text-gray-400 -mt-2">
+          Override the suggested numbers — e.g. a coach's plan. These are what the tracker uses.
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {([['kcal', kcal, setKcal], ['Protein', protein, setProtein], ['Carbs', carbs, setCarbs], ['Fat', fat, setFat]] as const).map(([label, val, set]) => (
+            <div key={label}>
+              <label className="text-xs text-gray-500">{label}</label>
+              <input className={input} inputMode="numeric" value={val} onChange={(e) => set(e.target.value)} />
+            </div>
+          ))}
+        </div>
+        <button onClick={() => saveStats(false)} disabled={!statsValid}
+          className={`w-full rounded-xl font-semibold py-2.5 border ${targetsDiffer ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-300'}`}>
+          Save custom targets
+        </button>
+      </div>
+
+      {saved && <div className="text-center text-sm font-medium text-brand-700">Saved ✓</div>}
+
+      <button onClick={deleteProfile} className="w-full text-center text-sm text-red-400 py-2">
+        Delete this profile
+      </button>
+    </div>
+  )
+}
