@@ -1,122 +1,98 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db, addDays, todayStr, type MealSlot } from './db'
+import { EMPTY_NUTRIENTS } from './lib/nutrition'
+import Onboarding from './components/Onboarding'
+import TodayView, { dayTotals, useDayEntries } from './components/TodayView'
+import WeekView from './components/WeekView'
+import LogSheet from './components/LogSheet'
 
-function App() {
-  const [count, setCount] = useState(0)
+type Tab = 'today' | 'week'
+
+export default function App() {
+  const profiles = useLiveQuery(() => db.profiles.toArray(), [])
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [date, setDate] = useState(todayStr())
+  const [tab, setTab] = useState<Tab>('today')
+  const [logSlot, setLogSlot] = useState<MealSlot | null>(null)
+  const [addingProfile, setAddingProfile] = useState(false)
+
+  const profile = profiles?.find((p) => p.id === (activeId ?? profiles[0]?.id)) ?? profiles?.[0]
+  const entries = useDayEntries(profile?.id ?? -1, date)
+
+  if (!profiles) return null // db loading
+
+  if (profiles.length === 0 || addingProfile) {
+    return <Onboarding firstProfile={profiles.length === 0} onDone={() => setAddingProfile(false)} />
+  }
+
+  if (!profile) return null
+
+  const totals = dayTotals(entries)
+  const remaining = {
+    ...EMPTY_NUTRIENTS,
+    kcal: profile.targets.kcal - totals.kcal,
+    protein: profile.targets.protein - totals.protein,
+    carbs: profile.targets.carbs - totals.carbs,
+    fat: profile.targets.fat - totals.fat,
+  }
+
+  const isToday = date === todayStr()
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="max-w-md mx-auto min-h-dvh pb-24">
+      <header className="sticky top-0 z-40 bg-gray-50/90 backdrop-blur border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex gap-1.5">
+            {profiles.map((p) => (
+              <button key={p.id} onClick={() => setActiveId(p.id!)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium ${p.id === profile.id ? 'bg-brand-600 text-white' : 'bg-white border border-gray-300 text-gray-600'}`}>
+                {p.name}
+              </button>
+            ))}
+            <button onClick={() => setAddingProfile(true)}
+              className="w-8 h-8 rounded-full bg-white border border-gray-300 text-gray-400 font-bold">+</button>
+          </div>
+          <div className="flex items-center gap-1 text-sm">
+            <button onClick={() => setDate(addDays(date, -1))} className="px-2 py-1 text-gray-400">‹</button>
+            <button onClick={() => setDate(todayStr())} className={`font-medium ${isToday ? 'text-brand-700' : 'text-gray-600'}`}>
+              {isToday ? 'Today' : `${date.slice(8)}/${date.slice(5, 7)}`}
+            </button>
+            <button onClick={() => setDate(addDays(date, 1))} className="px-2 py-1 text-gray-400">›</button>
+          </div>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      {tab === 'today' && <TodayView profile={profile} date={date} onAdd={(s) => setLogSlot(s)} />}
+      {tab === 'week' && <WeekView profile={profile} date={date} onPickDay={(d) => { setDate(d); setTab('today') }} />}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200">
+        <div className="max-w-md mx-auto grid grid-cols-3 items-center">
+          {(['today', 'week'] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`py-3.5 text-sm font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
+              {t}
+            </button>
+          ))}
+          <div className="flex justify-center">
+            <button
+              onClick={() => setLogSlot('snack')}
+              className="w-14 h-14 -mt-6 rounded-full bg-brand-600 text-white text-3xl font-light shadow-lg shadow-brand-600/30"
+              aria-label="Log food"
+            >+</button>
+          </div>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </nav>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      {logSlot && profile && (
+        <LogSheet
+          profile={profile}
+          date={date}
+          remaining={remaining}
+          defaultSlot={logSlot}
+          onClose={() => setLogSlot(null)}
+        />
+      )}
+    </div>
   )
 }
-
-export default App
