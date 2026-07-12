@@ -3,7 +3,7 @@ import type { Food } from './afcd'
 // ---------- BMR / TDEE (Mifflin-St Jeor) ----------
 
 export type Sex = 'female' | 'male'
-export type Goal = 'lose' | 'maintain' | 'gain'
+export type Goal = 'lose' | 'maintain' | 'recomp' | 'muscle' | 'endurance'
 
 export const ACTIVITY_LEVELS = [
   { key: 'sedentary', label: 'Sedentary (desk job, little exercise)', factor: 1.2 },
@@ -25,7 +25,40 @@ export function tdee(bmr: number, activity: ActivityKey): number {
   return Math.round(bmr * f)
 }
 
-export const GOAL_ADJUST: Record<Goal, number> = { lose: -0.2, maintain: 0, gain: 0.1 }
+/**
+ * Goal presets. Each sets a calorie adjustment on TDEE, a protein dose (g/kg —
+ * higher in a deficit to preserve lean mass, high for hypertrophy, moderate for
+ * endurance where carbs take priority) and a fat share of calories (lower for
+ * muscle/endurance goals so the remainder flows to carbs, which fuel training).
+ */
+export const GOAL_PRESETS: Record<Goal, {
+  label: string
+  hint: string
+  kcalAdjust: number
+  proteinPerKg: number
+  fatShare: number
+}> = {
+  lose: {
+    label: 'Lose fat', hint: '−20% cal · high protein',
+    kcalAdjust: -0.2, proteinPerKg: 2.2, fatShare: 0.3,
+  },
+  maintain: {
+    label: 'Maintain', hint: 'TDEE · balanced',
+    kcalAdjust: 0, proteinPerKg: 1.8, fatShare: 0.3,
+  },
+  recomp: {
+    label: 'Recomp', hint: 'TDEE · very high protein',
+    kcalAdjust: 0, proteinPerKg: 2.2, fatShare: 0.25,
+  },
+  muscle: {
+    label: 'Build muscle', hint: '+10% cal · high protein & carbs',
+    kcalAdjust: 0.1, proteinPerKg: 2.0, fatShare: 0.25,
+  },
+  endurance: {
+    label: 'Endurance / VO₂', hint: 'TDEE · carb-forward fuel',
+    kcalAdjust: 0, proteinPerKg: 1.7, fatShare: 0.25,
+  },
+}
 
 export interface MacroTargets {
   kcal: number
@@ -34,11 +67,12 @@ export interface MacroTargets {
   carbs: number // g
 }
 
-/** Protein-first split: 1.8 g/kg protein, 30% of calories from fat, remainder carbs. */
+/** Protein-first split from the goal preset; carbs get the remaining calories. */
 export function macroTargets(tdeeKcal: number, goal: Goal, weightKg: number): MacroTargets {
-  const kcal = Math.round(tdeeKcal * (1 + GOAL_ADJUST[goal]))
-  const protein = Math.round(1.8 * weightKg)
-  const fat = Math.round((kcal * 0.3) / 9)
+  const p = GOAL_PRESETS[goal]
+  const kcal = Math.round(tdeeKcal * (1 + p.kcalAdjust))
+  const protein = Math.round(p.proteinPerKg * weightKg)
+  const fat = Math.round((kcal * p.fatShare) / 9)
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4))
   return { kcal, protein, fat, carbs }
 }

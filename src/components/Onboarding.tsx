@@ -1,15 +1,13 @@
 import { useState } from 'react'
 import { db } from '../db'
 import {
-  ACTIVITY_LEVELS, bmrMifflinStJeor, macroTargets, tdee,
+  ACTIVITY_LEVELS, GOAL_PRESETS, bmrMifflinStJeor, macroTargets, tdee,
   type ActivityKey, type Goal, type Sex,
 } from '../lib/nutrition'
 
-const GOALS: { key: Goal; label: string; hint: string }[] = [
-  { key: 'lose', label: 'Lose', hint: '−20% calories' },
-  { key: 'maintain', label: 'Maintain', hint: 'TDEE calories' },
-  { key: 'gain', label: 'Gain', hint: '+10% calories' },
-]
+const GOALS = (Object.keys(GOAL_PRESETS) as Goal[]).map((key) => ({
+  key, label: GOAL_PRESETS[key].label, hint: GOAL_PRESETS[key].hint,
+}))
 
 export default function Onboarding({ firstProfile, onDone }: { firstProfile: boolean; onDone: () => void }) {
   const [name, setName] = useState('')
@@ -89,15 +87,18 @@ export default function Onboarding({ firstProfile, onDone }: { firstProfile: boo
 
         <div>
           <label className="text-sm font-medium text-gray-700">Goal</label>
-          <div className="grid grid-cols-3 gap-2 mt-1">
+          <div className="grid grid-cols-2 gap-2 mt-1">
             {GOALS.map((g) => (
               <button key={g.key} onClick={() => setGoal(g.key)}
-                className={`rounded-xl py-2 border ${goal === g.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-700'}`}>
-                <div className="font-medium">{g.label}</div>
+                className={`rounded-xl py-2 px-1 border ${goal === g.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-700'}`}>
+                <div className="font-medium text-sm">{g.label}</div>
                 <div className={`text-[10px] ${goal === g.key ? 'text-brand-100' : 'text-gray-400'}`}>{g.hint}</div>
               </button>
             ))}
           </div>
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            Goals set both calories and the macro split — muscle and endurance goals shift more calories into carbs to fuel training.
+          </p>
         </div>
 
         {bmr != null && tdeeVal != null && targets && (
@@ -111,7 +112,9 @@ export default function Onboarding({ firstProfile, onDone }: { firstProfile: boo
               <span className="text-gray-500">Fat</span><span className="text-right font-medium">{targets.fat} g</span>
               <span className="text-gray-500">Carbs</span><span className="text-right font-medium">{targets.carbs} g</span>
             </div>
-            <p className="text-[11px] text-gray-400 mt-2">Protein-first split (1.8 g/kg). You can hand-tune these later.</p>
+            <p className="text-[11px] text-gray-400 mt-2">
+              Protein-first split ({GOAL_PRESETS[goal].proteinPerKg} g/kg, {Math.round(GOAL_PRESETS[goal].fatShare * 100)}% calories from fat). You can hand-tune these later.
+            </p>
           </div>
         )}
 
