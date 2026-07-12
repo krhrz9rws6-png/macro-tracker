@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, addDays, todayStr, type MealSlot } from './db'
 import { EMPTY_NUTRIENTS } from './lib/nutrition'
@@ -21,6 +21,22 @@ export default function App() {
   const profile = profiles?.find((p) => p.id === (activeId ?? profiles[0]?.id)) ?? profiles?.[0]
   const entries = useDayEntries(profile?.id ?? -1, date)
 
+  // Phones keep the app open for days: when it comes back to the foreground
+  // after midnight, roll a stale "today" forward to the real today.
+  const dateRef = useRef(date)
+  dateRef.current = date
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      const now = todayStr()
+      if (dateRef.current !== now && dateRef.current === todayStr(new Date(Date.now() - 864e5))) {
+        setDate(now)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   if (!profiles) return null // db loading
 
   if (profiles.length === 0 || addingProfile) {
@@ -42,7 +58,7 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto min-h-dvh pb-24">
-      <header className="sticky top-0 z-40 bg-gray-50/90 backdrop-blur border-b border-gray-200">
+      <header className="sticky top-0 z-40 bg-gray-50/90 backdrop-blur border-b border-gray-200 pt-[env(safe-area-inset-top)]">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex gap-1.5">
             {profiles.map((p) => (
@@ -68,7 +84,7 @@ export default function App() {
       {tab === 'week' && <WeekView profile={profile} date={date} onPickDay={(d) => { setDate(d); setTab('today') }} />}
       {tab === 'me' && <SettingsView profile={profile} />}
 
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200">
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4 items-center">
           {(['today', 'week', 'me'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}

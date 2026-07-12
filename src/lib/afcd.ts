@@ -72,6 +72,9 @@ export const foods: Food[] = (raw as { foods: Row[] }).foods.map((r) => ({
 const byId = new Map(foods.map((f) => [f.id, f]))
 export const getFood = (id: string) => byId.get(id)
 
+// Precomputed once — searching runs on every keystroke.
+const lcNames = foods.map((f) => f.name.toLowerCase())
+
 // Beverages are AFCD classification major group 29 (non-alcoholic) / alcohol in 291-293.
 export const isBeverage = (f: Food) => f.classification.startsWith('29')
 export const isAlcoholic = (f: Food) => f.alcohol > 0
@@ -81,8 +84,9 @@ export function searchFoods(query: string, limit = 30): Food[] {
   const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return []
   const scored: { f: Food; score: number }[] = []
-  for (const f of foods) {
-    const name = f.name.toLowerCase()
+  for (let i = 0; i < foods.length; i++) {
+    const f = foods[i]
+    const name = lcNames[i]
     let score = 0
     let ok = true
     for (const w of words) {

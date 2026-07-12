@@ -36,7 +36,11 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
   const results = useMemo(() => searchFoods(query), [query])
 
   const favorites = useLiveQuery(
-    () => db.favorites.where('profileId').equals(profile.id!).reverse().sortBy('uses'),
+    async () => {
+      const favs = await db.favorites.where('profileId').equals(profile.id!).toArray()
+      // Most-used first; recency breaks ties.
+      return favs.sort((a, b) => b.uses - a.uses || b.lastUsed - a.lastUsed)
+    },
     [profile.id],
   )
 

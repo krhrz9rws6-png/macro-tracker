@@ -5,6 +5,15 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/macro-tracker/',
+  build: {
+    rollupOptions: {
+      output: {
+        // The AFCD data rarely changes — keep it in its own chunk so app
+        // updates don't force phones to re-download 233KB of food data.
+        manualChunks: (id) => (id.includes('data/afcd.json') ? 'afcd' : undefined),
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
