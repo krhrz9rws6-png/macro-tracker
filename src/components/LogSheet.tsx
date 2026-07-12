@@ -151,16 +151,23 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
 
           {!selected && query && (
             <div className="p-2">
-              {results.map((f) => (
-                <button key={f.id} onClick={() => pick(f, 100, undefined, true)}
-                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100">
-                  <div className="text-sm">{f.name}</div>
-                  <div className="text-xs text-gray-400 flex gap-2 items-center">
-                    <span>{f.kcal} kcal/100g</span>
-                    <QualityDot score={qualityScore(f)} />
-                  </div>
-                </button>
-              ))}
+              {results.map((f) => {
+                const m = foodMeasures(f.id)[0]
+                return (
+                  <button key={f.id} onClick={() => pick(f, 100, undefined, true)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100">
+                    <div className="text-sm">{f.name}</div>
+                    <div className="text-xs text-gray-400 flex gap-2 items-center">
+                      <span>
+                        {m
+                          ? `${Math.round((f.kcal * m.grams) / 100)} kcal per ${m.label}`
+                          : `${f.kcal} kcal/100g`}
+                      </span>
+                      <QualityDot score={qualityScore(f)} />
+                    </div>
+                  </button>
+                )
+              })}
               {results.length === 0 && <div className="p-6 text-center text-sm text-gray-400">No matches — try fewer words</div>}
             </div>
           )}
