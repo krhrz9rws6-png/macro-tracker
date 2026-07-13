@@ -63,11 +63,47 @@ export interface Favorite {
   lastUsed: number
 }
 
+/** One line of a recipe. `foodId` is the matched AFCD food; null until matched. */
+export interface RecipeIngredient {
+  text: string // original line, e.g. "212 G Brown Sugar"
+  foodId: string | null
+  grams: number // resolved edible weight used for the nutrition calc
+  unitLabel?: string // display, e.g. "½ cup" or "1 can"
+}
+
+/** A recipe. Nutrition is computed from ingredients OR taken from a source (Cozyla). */
+export interface Recipe {
+  id?: number
+  name: string
+  servings: number
+  ingredients: RecipeIngredient[]
+  /** Per-serving nutrients supplied directly (e.g. parsed from Cozyla); overrides computed when set. */
+  statedPerServing?: Partial<Nutrients>
+  source: 'manual' | 'cozyla' | 'url'
+  category?: string // Main / Side / Snack / Dessert / Breakfast …
+  createdAt: number
+  updatedAt: number
+}
+
+export type PlanSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+
+/** A meal placed on the weekly plan for a date + slot (shared; per-profile servings). */
+export interface PlanEntry {
+  id?: number
+  date: string // YYYY-MM-DD
+  slot: PlanSlot
+  recipeId: number
+  title: string // denormalised for quick display
+  createdAt: number
+}
+
 export const db = new Dexie('macro-tracker') as Dexie & {
   profiles: EntityTable<Profile, 'id'>
   log: EntityTable<LogEntry, 'id'>
   favorites: EntityTable<Favorite, 'id'>
   supplements: EntityTable<Supplement, 'id'>
+  recipes: EntityTable<Recipe, 'id'>
+  plan: EntityTable<PlanEntry, 'id'>
 }
 
 db.version(1).stores({
@@ -78,6 +114,11 @@ db.version(1).stores({
 
 db.version(2).stores({
   supplements: '++id, profileId',
+})
+
+db.version(3).stores({
+  recipes: '++id, name, updatedAt',
+  plan: '++id, [date+slot], date, recipeId',
 })
 
 export const todayStr = (d = new Date()) => {

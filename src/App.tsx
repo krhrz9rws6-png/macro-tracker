@@ -6,9 +6,10 @@ import Onboarding from './components/Onboarding'
 import TodayView, { dayTotals, useDayEntries } from './components/TodayView'
 import WeekView from './components/WeekView'
 import SettingsView from './components/SettingsView'
+import RecipesView from './components/RecipesView'
 import LogSheet from './components/LogSheet'
 
-type Tab = 'today' | 'week' | 'me'
+type Tab = 'today' | 'week' | 'recipes' | 'me'
 
 export default function App() {
   const profiles = useLiveQuery(() => db.profiles.toArray(), [])
@@ -82,11 +83,12 @@ export default function App() {
 
       {tab === 'today' && <TodayView profile={profile} date={date} onAdd={(s) => setLogSlot(s)} />}
       {tab === 'week' && <WeekView profile={profile} date={date} onPickDay={(d) => { setDate(d); setTab('today') }} />}
+      {tab === 'recipes' && <RecipesView />}
       {tab === 'me' && <SettingsView profile={profile} />}
 
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-md mx-auto grid grid-cols-4 items-center">
-          {(['today', 'week', 'me'] as Tab[]).map((t) => (
+        <div className="max-w-md mx-auto grid grid-cols-5 items-center">
+          {(['today', 'week'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`py-3.5 text-sm font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
               {t}
@@ -99,6 +101,12 @@ export default function App() {
               aria-label="Log food"
             >+</button>
           </div>
+          {(['recipes', 'me'] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`py-3.5 text-sm font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
+              {t}
+            </button>
+          ))}
         </div>
       </nav>
 

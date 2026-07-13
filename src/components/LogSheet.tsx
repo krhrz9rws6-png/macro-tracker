@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, MEAL_SLOTS, type MealSlot, type Profile } from '../db'
+import { db, MEAL_SLOTS, type MealSlot, type Profile, type Recipe } from '../db'
 import { foodMeasures, GENERIC_MEASURES, getFood, isBeverage, searchFoods, type Food, type Measure } from '../lib/afcd'
 import {
-  pregnancyFoodFlag, qualityScore, scaleFood, standardDrinks, trafficLights, type Nutrients,
+  EMPTY_NUTRIENTS, addNutrients, pregnancyFoodFlag, qualityScore, scaleFood,
+  standardDrinks, trafficLights, type Nutrients,
 } from '../lib/nutrition'
+import { recipeNutrition } from '../lib/recipe'
 import { LightBadge, QualityDot } from './ui'
 
 const QUICK_DRINKS: { label: string; query: string; grams: number }[] = [
@@ -34,8 +36,28 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
   const [unit, setUnit] = useState<Measure | null>(null)
   const [qty, setQty] = useState(1)
   const [slot, setSlot] = useState<MealSlot>(defaultSlot)
+  const [recipeToLog, setRecipeToLog] = useState<Recipe | null>(null)
+  const [recipeServings, setRecipeServings] = useState(1)
 
   const results = useMemo(() => searchFoods(query), [query])
+  const recipes = useLiveQuery(() => db.recipes.orderBy('updatedAt').reverse().toArray(), [])
+  const recipeMatches = useMemo(() => {
+    if (!query) return []
+    const q = query.toLowerCase()
+    return (recipes ?? []).filter((r) => r.name.toLowerCase().includes(q)).slice(0, 4)
+  }, [query, recipes])
+
+  const logRecipe = async () => {
+    if (!recipeToLog) return
+    const per = recipeNutrition(recipeToLog).perServing
+    const nutrients = addNutrients({ ...EMPTY_NUTRIENTS },
+      Object.fromEntries(Object.entries(per).map(([k, v]) => [k, v * recipeServings])) as Partial<Nutrients>)
+    await db.log.add({
+      profileId: profile.id!, date, slot, foodId: null, name: recipeToLog.name,
+      grams: 0, nutrients, source: 'recipe', createdAt: Date.now(),
+    })
+    onClose()
+  }
 
   const favorites = useLiveQuery(
     async () => {
@@ -118,8 +140,66 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {!selected && !query && (
+          {recipeToLog && (
             <div className="p-4 space-y-4">
+              <div className="font-semibold">🍽️ {recipeToLog.name}</div>
+              {(() => {
+                const per = recipeNutrition(recipeToLog).perServing
+                const k = per.kcal * recipeServings
+                return (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setRecipeServings(Math.max(0.5, recipeServings - 0.5))}
+                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">−</button>
+                      <input className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold"
+                        inputMode="decimal" value={recipeServings}
+                        onChange={(e) => setRecipeServings(Math.max(0, parseFloat(e.target.value) || 0))} />
+                      <button onClick={() => setRecipeServings(recipeServings + 0.5)}
+                        className="w-10 h-10 rounded-xl border border-gray-300 text-xl text-gray-600">+</button>
+                      <span className="text-sm text-gray-500">serving{recipeServings === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="rounded-2xl bg-gray-50 border border-gray-200 p-3 grid grid-cols-4 gap-2 text-center">
+                      {([['kcal', k, ''], ['P', per.protein * recipeServings, 'g'], ['C', per.carbs * recipeServings, 'g'], ['F', per.fat * recipeServings, 'g']] as const).map(([l, v, u]) => (
+                        <div key={l}><div className="text-sm font-semibold">{Math.round(v)}{u}</div><div className="text-[10px] text-gray-400">{l}</div></div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      {MEAL_SLOTS.filter((s) => s.key !== 'drink' && s.key !== 'supplement').map((s) => (
+                        <button key={s.key} onClick={() => setSlot(s.key)}
+                          className={`flex-1 py-2 rounded-xl border text-xs font-medium ${slot === s.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                          {s.emoji}<br />{s.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setRecipeToLog(null)} className="flex-1 py-3 rounded-2xl border border-gray-300 font-medium text-gray-600">Back</button>
+                      <button onClick={logRecipe} className="flex-[2] py-3 rounded-2xl bg-brand-600 text-white font-semibold">Log it</button>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
+
+          {!selected && !query && !recipeToLog && (
+            <div className="p-4 space-y-4">
+              {recipes && recipes.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Your recipes</div>
+                  <div className="space-y-1">
+                    {recipes.slice(0, 5).map((r) => {
+                      const per = recipeNutrition(r).perServing
+                      return (
+                        <button key={r.id} onClick={() => { setRecipeToLog(r); setRecipeServings(1); setSlot(defaultSlot === 'drink' ? 'dinner' : defaultSlot) }}
+                          className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100 flex justify-between items-center">
+                          <span className="text-sm">🍽️ {r.name}</span>
+                          <span className="text-xs text-gray-400">{Math.round(per.kcal)} kcal/serve</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div>
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Quick drinks</div>
                 <div className="flex flex-wrap gap-2">
@@ -152,8 +232,18 @@ export default function LogSheet({ profile, date, remaining, defaultSlot, onClos
             </div>
           )}
 
-          {!selected && query && (
+          {!selected && query && !recipeToLog && (
             <div className="p-2">
+              {recipeMatches.map((r) => {
+                const per = recipeNutrition(r).perServing
+                return (
+                  <button key={`r${r.id}`} onClick={() => { setRecipeToLog(r); setRecipeServings(1); setSlot(defaultSlot === 'drink' ? 'dinner' : defaultSlot) }}
+                    className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100">
+                    <div className="text-sm">🍽️ {r.name} <span className="text-[10px] text-brand-700">recipe</span></div>
+                    <div className="text-xs text-gray-400">{Math.round(per.kcal)} kcal/serve · P{Math.round(per.protein)} C{Math.round(per.carbs)} F{Math.round(per.fat)}</div>
+                  </button>
+                )
+              })}
               {results.map((f) => {
                 const m = foodMeasures(f.id)[0]
                 return (
