@@ -5,6 +5,8 @@ import {
   macroTargets, pregnancyEnergyBump, tdee, trimesterOf,
   type ActivityKey, type Goal, type PregnancyState,
 } from '../lib/nutrition'
+import ImportView from './ImportView'
+import { hasApiKey } from '../lib/settings'
 
 const PREG_STATES: { key: PregnancyState | 'off'; label: string }[] = [
   { key: 'off', label: 'Off' },
@@ -14,6 +16,12 @@ const PREG_STATES: { key: PregnancyState | 'off'; label: string }[] = [
 ]
 
 export default function SettingsView({ profile }: { profile: Profile }) {
+  const [importing, setImporting] = useState(false)
+  if (importing) return <ImportView onClose={() => setImporting(false)} />
+  return <SettingsBody profile={profile} onImport={() => setImporting(true)} />
+}
+
+function SettingsBody({ profile, onImport }: { profile: Profile; onImport: () => void }) {
   const [age, setAge] = useState(String(profile.ageYears))
   const [height, setHeight] = useState(String(profile.heightCm))
   const [weight, setWeight] = useState(String(profile.weightKg))
@@ -72,6 +80,16 @@ export default function SettingsView({ profile }: { profile: Profile }) {
 
   return (
     <div className="p-4 space-y-4">
+      <button onClick={onImport}
+        className="w-full rounded-3xl bg-brand-600 text-white shadow-sm p-4 flex items-center justify-between">
+        <span className="text-left">
+          <span className="block font-semibold">📸 Import from Cozyla</span>
+          <span className="block text-xs text-brand-100">Screenshot a recipe, weekly plan, or grocery list</span>
+        </span>
+        <span className="text-2xl">›</span>
+        {!hasApiKey() && <span className="sr-only">API key needed</span>}
+      </button>
+
       <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-4 space-y-3">
         <div className="text-sm font-semibold">{profile.name} — stats</div>
         <div className="grid grid-cols-3 gap-3">
