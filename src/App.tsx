@@ -7,9 +7,10 @@ import TodayView, { dayTotals, useDayEntries } from './components/TodayView'
 import WeekView from './components/WeekView'
 import SettingsView from './components/SettingsView'
 import RecipesView from './components/RecipesView'
+import PlanView from './components/PlanView'
 import LogSheet from './components/LogSheet'
 
-type Tab = 'today' | 'week' | 'recipes' | 'me'
+type Tab = 'today' | 'week' | 'plan' | 'recipes' | 'me'
 
 export default function App() {
   const profiles = useLiveQuery(() => db.profiles.toArray(), [])
@@ -83,27 +84,22 @@ export default function App() {
 
       {tab === 'today' && <TodayView profile={profile} date={date} onAdd={(s) => setLogSlot(s)} />}
       {tab === 'week' && <WeekView profile={profile} date={date} onPickDay={(d) => { setDate(d); setTab('today') }} />}
+      {tab === 'plan' && <PlanView profile={profile} date={date} />}
       {tab === 'recipes' && <RecipesView />}
       {tab === 'me' && <SettingsView profile={profile} />}
 
+      {/* Floating log button, sits above the nav */}
+      <button
+        onClick={() => setLogSlot('snack')}
+        className="fixed z-50 right-4 bottom-[calc(4rem+env(safe-area-inset-bottom))] w-14 h-14 rounded-full bg-brand-600 text-white text-3xl font-light shadow-lg shadow-brand-600/40"
+        aria-label="Log food"
+      >+</button>
+
       <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-5 items-center">
-          {(['today', 'week'] as Tab[]).map((t) => (
+          {(['today', 'week', 'plan', 'recipes', 'me'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`py-3.5 text-sm font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
-              {t}
-            </button>
-          ))}
-          <div className="flex justify-center">
-            <button
-              onClick={() => setLogSlot('snack')}
-              className="w-14 h-14 -mt-6 rounded-full bg-brand-600 text-white text-3xl font-light shadow-lg shadow-brand-600/30"
-              aria-label="Log food"
-            >+</button>
-          </div>
-          {(['recipes', 'me'] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`py-3.5 text-sm font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
+              className={`py-3.5 text-[13px] font-medium capitalize ${tab === t ? 'text-brand-700' : 'text-gray-400'}`}>
               {t}
             </button>
           ))}
