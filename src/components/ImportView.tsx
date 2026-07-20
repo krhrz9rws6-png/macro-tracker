@@ -94,7 +94,14 @@ export default function ImportView({ onClose }: { onClose: () => void }) {
       </div>
 
       {result && (
-        <ReviewResult result={result} onSaved={(m) => { setSavedMsg(m); setResult(null) }} />
+        <>
+          <div className="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-500">
+            AI read cost: <span className="font-semibold text-gray-700">
+              {result.cost.usd < 0.01 ? '<US¢1' : `US$${result.cost.usd.toFixed(3)}`}
+            </span>{' '}({result.cost.inputTokens.toLocaleString()} in / {result.cost.outputTokens.toLocaleString()} out tokens)
+          </div>
+          <ReviewResult result={result} onSaved={(m) => { setSavedMsg(m); setResult(null) }} />
+        </>
       )}
       {savedMsg && <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">{savedMsg}</div>}
     </div>

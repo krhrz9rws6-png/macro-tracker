@@ -24,6 +24,23 @@ export interface VisionResult {
   plan?: ParsedPlanDay[]
   grocery?: ParsedGrocery
   raw: string
+  cost: ImportCost
+}
+
+// claude-sonnet-5 standard pricing (USD per token). Images bill as input tokens.
+const USD_PER_INPUT_TOKEN = 3 / 1_000_000
+const USD_PER_OUTPUT_TOKEN = 15 / 1_000_000
+
+export interface ImportCost {
+  inputTokens: number
+  outputTokens: number
+  usd: number
+}
+
+function costFrom(usage: { input_tokens?: number; output_tokens?: number } | undefined): ImportCost {
+  const input = usage?.input_tokens ?? 0
+  const output = usage?.output_tokens ?? 0
+  return { inputTokens: input, outputTokens: output, usd: input * USD_PER_INPUT_TOKEN + output * USD_PER_OUTPUT_TOKEN }
 }
 
 const PROMPTS: Record<ImportKind, string> = {
@@ -81,13 +98,14 @@ export async function parseScreenshot(
 
   const data = await res.json()
   const text: string = data?.content?.[0]?.text ?? ''
+  const cost = costFrom(data?.usage)
   let parsed: Record<string, unknown>
   try {
     parsed = parseJson(text) as Record<string, unknown>
   } catch {
     throw new Error('Could not read the screenshot — try a clearer, full-screen image.')
   }
-  return { kind, recipe: parsed.recipe as never, plan: parsed.plan as never, grocery: parsed.grocery as never, raw: text }
+  return { kind, recipe: parsed.recipe as never, plan: parsed.plan as never, grocery: parsed.grocery as never, raw: text, cost }
 }
 
 /** File → base64 (no data: prefix) + media type, for the API. */
