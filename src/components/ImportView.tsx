@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { db, type PlanSlot, type RecipeIngredient } from '../db'
+import { useEffect, useState } from 'react'
+import { db, priceKey, type PlanSlot, type RecipeIngredient } from '../db'
 import { foodMeasures } from '../lib/afcd'
 import { weekDates, todayStr } from '../db'
 import { parseIngredientLine } from '../lib/parseIngredient'
@@ -210,14 +210,61 @@ function ReviewPlan({ days, onSaved }: { days: ParsedPlanDay[]; onSaved: (m: str
 }
 
 function ReviewGrocery({ items, onSaved }: { items: string[]; onSaved: (m: string) => void }) {
+  // Price per item, seeded from remembered prices (blank = not priced yet).
+  const [prices, setPrices] = useState<Record<number, string>>({})
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      const seed: Record<number, string> = {}
+      for (let i = 0; i < items.length; i++) {
+        const remembered = await db.prices.where('key').equals(priceKey(items[i])).first()
+        if (remembered) seed[i] = String(remembered.price)
+      }
+      setPrices(seed); setLoaded(true)
+    })()
+  }, [items])
+
+  const total = items.reduce((sum, _, i) => sum + (parseFloat(prices[i] ?? '') || 0), 0)
+  const pricedCount = items.filter((_, i) => (parseFloat(prices[i] ?? '') || 0) > 0).length
+
+  const save = async () => {
+    for (let i = 0; i < items.length; i++) {
+      const p = parseFloat(prices[i] ?? '')
+      if (!Number.isFinite(p) || p <= 0) continue
+      const key = priceKey(items[i])
+      const existing = await db.prices.where('key').equals(key).first()
+      if (existing) await db.prices.update(existing.id!, { price: p, label: items[i], source: 'manual', updatedAt: Date.now() })
+      else await db.prices.add({ key, label: items[i], price: p, source: 'manual', updatedAt: Date.now() })
+    }
+    onSaved(`Estimated basket: $${total.toFixed(2)} (${pricedCount}/${items.length} priced). Prices saved for next time.`)
+  }
+
   return (
-    <div className="rounded-2xl bg-white border border-gray-200 p-4 space-y-2">
-      <div className="text-sm font-semibold">Grocery list ({items.length} items)</div>
-      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
-        {items.map((it, i) => <span key={i} className="rounded-lg bg-gray-100 px-2 py-1 text-xs">{it}</span>)}
+    <div className="rounded-2xl bg-white border border-gray-200 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold">Grocery list ({items.length})</div>
+        <div className="text-right">
+          <div className="text-lg font-bold text-brand-700">${total.toFixed(2)}</div>
+          <div className="text-[10px] text-gray-400">{pricedCount}/{items.length} priced</div>
+        </div>
       </div>
-      <p className="text-[11px] text-gray-400">Price matching (Harris Farm) arrives in the next phase — this confirms the parser reads your list cleanly.</p>
-      <button onClick={() => onSaved(`Read ${items.length} grocery items.`)} className="w-full rounded-xl bg-gray-900 text-white font-semibold py-2.5">Done</button>
+      <div className="space-y-1 max-h-72 overflow-y-auto">
+        {items.map((it, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="flex-1 text-sm truncate">{it}</span>
+            <span className="text-gray-400 text-sm">$</span>
+            <input className="w-16 rounded-lg border border-gray-300 px-2 py-1 text-right text-sm" inputMode="decimal"
+              placeholder="—" value={prices[i] ?? ''}
+              onChange={(e) => setPrices({ ...prices, [i]: e.target.value })} />
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-gray-400">
+        Prices you enter are remembered per item, so next week's estimate fills in automatically.
+        {loaded && pricedCount > 0 && ' Pre-filled ones came from your price memory.'}
+      </p>
+      <button onClick={save} className="w-full rounded-xl bg-brand-600 text-white font-semibold py-2.5">Save prices & estimate</button>
     </div>
   )
 }

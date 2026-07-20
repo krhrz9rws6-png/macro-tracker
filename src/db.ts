@@ -97,6 +97,16 @@ export interface PlanEntry {
   createdAt: number
 }
 
+/** Remembered price for a grocery item, keyed by a normalised name. */
+export interface PriceMemory {
+  id?: number
+  key: string // normalised item name (lowercase, trimmed)
+  label: string // display name as last seen
+  price: number // AUD
+  source: 'manual' | 'receipt' | 'harrisfarm'
+  updatedAt: number
+}
+
 export const db = new Dexie('macro-tracker') as Dexie & {
   profiles: EntityTable<Profile, 'id'>
   log: EntityTable<LogEntry, 'id'>
@@ -104,6 +114,7 @@ export const db = new Dexie('macro-tracker') as Dexie & {
   supplements: EntityTable<Supplement, 'id'>
   recipes: EntityTable<Recipe, 'id'>
   plan: EntityTable<PlanEntry, 'id'>
+  prices: EntityTable<PriceMemory, 'id'>
 }
 
 db.version(1).stores({
@@ -120,6 +131,12 @@ db.version(3).stores({
   recipes: '++id, name, updatedAt',
   plan: '++id, [date+slot], date, recipeId',
 })
+
+db.version(4).stores({
+  prices: '++id, &key',
+})
+
+export const priceKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
 
 export const todayStr = (d = new Date()) => {
   const y = d.getFullYear()
