@@ -31,6 +31,7 @@ export default function RecipesView() {
 
       {(recipes ?? []).map((r) => {
         const n = recipeNutrition(r)
+        const isPlaceholder = !r.statedPerServing && r.ingredients.length === 0
         return (
           <button key={r.id} onClick={() => setEditing(r)}
             className="w-full text-left rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
@@ -45,12 +46,23 @@ export default function RecipesView() {
                 </div>
               </div>
               <div className="text-right shrink-0 ml-3">
-                <div className="font-semibold">{Math.round(n.perServing.kcal)} kcal</div>
-                <div className="text-[11px] text-gray-400">
-                  P{Math.round(n.perServing.protein)} C{Math.round(n.perServing.carbs)} F{Math.round(n.perServing.fat)}
-                </div>
+                {isPlaceholder ? (
+                  <div className="text-xs text-amber-600 font-medium">macros not set</div>
+                ) : (
+                  <>
+                    <div className="font-semibold">{Math.round(n.perServing.kcal)} kcal</div>
+                    <div className="text-[11px] text-gray-400">
+                      P{Math.round(n.perServing.protein)} C{Math.round(n.perServing.carbs)} F{Math.round(n.perServing.fat)}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
+            {isPlaceholder && (
+              <div className="mt-2 text-[11px] text-gray-500 bg-amber-50 rounded-lg px-2 py-1.5">
+                Placeholder from your plan. Import this recipe (Me → Import → Recipe) or tap to add ingredients.
+              </div>
+            )}
           </button>
         )
       })}

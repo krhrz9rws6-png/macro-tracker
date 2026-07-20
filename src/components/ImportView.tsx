@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { db, type PlanSlot, type Recipe, type RecipeIngredient } from '../db'
+import { db, type PlanSlot, type RecipeIngredient } from '../db'
 import { foodMeasures } from '../lib/afcd'
 import { weekDates, todayStr } from '../db'
 import { parseIngredientLine } from '../lib/parseIngredient'
@@ -118,13 +118,21 @@ function ReviewRecipe({ recipe, onSaved }: { recipe: ParsedRecipe; onSaved: (m: 
     const statedPerServing = ps
       ? { ...EMPTY_NUTRIENTS, kcal: ps.kcal ?? 0, protein: ps.protein ?? 0, carbs: ps.carbs ?? 0, fat: ps.fat ?? 0 }
       : undefined
-    const rec: Recipe = {
+    const fields = {
       name: name.trim(), servings: Math.max(1, parseInt(servings) || 1),
-      ingredients, statedPerServing, source: 'cozyla', category: recipe.category ?? undefined,
-      createdAt: Date.now(), updatedAt: Date.now(),
+      ingredients, statedPerServing, source: 'cozyla' as const,
+      category: recipe.category ?? undefined, updatedAt: Date.now(),
     }
-    await db.recipes.add(rec)
-    onSaved(`Saved "${rec.name}" to your recipes.`)
+    // If a placeholder with this name already exists (e.g. from a plan import),
+    // fill it in rather than creating a duplicate.
+    const existing = await db.recipes.filter((r) => r.name.toLowerCase() === fields.name.toLowerCase()).first()
+    if (existing) {
+      await db.recipes.update(existing.id!, fields)
+      onSaved(`Updated "${fields.name}" with its macros.`)
+    } else {
+      await db.recipes.add({ ...fields, createdAt: Date.now() })
+      onSaved(`Saved "${fields.name}" to your recipes.`)
+    }
   }
 
   return (
